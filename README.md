@@ -28,6 +28,7 @@ Running natively on Windows (1440p, 60 FPS):
 | 60 FPS gameplay | ✅ (entrances and cutscenes keep the game's own 30 FPS, so they play at natural speed) |
 | Resolution | 720p (native), 1440p, 4K, or **4K-FSR** (1440p render + AMD FSR upscale: close to 4K at 1440p speed) |
 | Cloth (jackets, dresses: e.g. Bobby Heenan, Miss Elizabeth) | ✅ fixed |
+| Managers and alternate attires (black or rainbow-striped models) | ✅ fixed in the launcher (`texture_fix=on`) |
 | Menu music, entrance themes, commentary | ✅ |
 | DLC packs | supported via `install-dlc.bat` (installer tested on package format; in-game DLC testing welcome) |
 | Mods (file replacement) | drop-in through `update\` (see [Mods](#mods)) |
@@ -61,6 +62,7 @@ graphics shaders are being built. They are cached in `userdata/`, so it gets smo
 | `resolution` | `720p`, `1440p`, `4k`, `4k-fsr` |
 | `fps` | `original` (60, with entrances and cutscenes at 30), or `60` (everything at 60; entrances run too fast) |
 | `fullscreen` | `yes` / `no` (F11 toggles in game) |
+| `texture_fix` | `on` (default) / `off`: copies the textures the game builds for managers and alternate attires back from the GPU, so they don't render black or striped |
 
 Keyboard and mouse work through the built-in controller emulation, and Xbox controllers work as normal.
 
