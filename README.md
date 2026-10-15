@@ -37,19 +37,18 @@ Tested on Windows with an NVIDIA RTX 3080: smooth 60 FPS at 1440p and 4K-FSR.
 
 ## Playing (Windows)
 
-You need a build of `wwe2k14.exe` (see [Building](#building)), your own game files, and a Vulkan-capable GPU.
+You need your own WWE 2K14 game files and a Vulkan-capable GPU.
 
-1. Put `wwe2k14.exe`, `avcodec-58.dll`, `avutil-56.dll`, and the two files from `launcher-windows/`
-   (`play-wwe2k14.bat`, `settings.txt`) in one folder.
-2. **Game files:** extract your own WWE 2K14 Xbox 360 disc into a folder (for example with `extract-xiso`). Either
-   name that folder `game` and put it next to `play-wwe2k14.bat`, or set `game_folder=` in `settings.txt`.
-3. **Title update 2.0.1.0** (media ID `0D94D1D2`): extract your own TU package into an `update` folder next to the
-   `.bat`:
-   ```
-   python tools/extract-title-update.py tu00000002_00000000 update
-   ```
-   Copy `update\default.xexp` next to your game's `default.xex` as well.
+1. **Download** `WWE2K14-Recomp-v1.0.zip` from [Releases](https://github.com/mikeflare007/wwe2k14-recomp/releases)
+   and unzip it anywhere. It contains the game program and launcher only, no game files.
+2. **Game files:** extract your own WWE 2K14 Xbox 360 disc (for example with `extract-xiso`) into the `game` folder,
+   so that `game\default.xex` exists. Or keep it anywhere and set `game_folder=` in `settings.txt`.
+3. **Title update 2.0.1.0** (media ID `0D94D1D2`): put your own TU file (named like `tu00000002_00000000`) in the
+   `title-update` folder. The launcher unpacks it on the first start (needs [Python 3](https://www.python.org), with
+   "Add python.exe to PATH" ticked).
 4. Edit `settings.txt` if you like, then double-click `play-wwe2k14.bat`.
+
+You can also build `wwe2k14.exe` yourself; see [Building](#building).
 
 The first matches can stutter for a moment whenever something new appears (a new wrestler, arena or effect): its
 graphics shaders are being built. They are cached in `userdata/`, so it gets smoother the more you play.
@@ -67,8 +66,7 @@ Keyboard and mouse work through the built-in controller emulation, and Xbox cont
 
 ### DLC
 
-Bring your own WWE 2K14 DLC package files (the Xbox 360 `LIVE`/`PIRS` files from your console's storage). Put
-`install-dlc.bat` and `install-dlc.py` (from `launcher-windows/`) next to `play-wwe2k14.bat`, then **drag the package
+Bring your own WWE 2K14 DLC package files (the Xbox 360 `LIVE`/`PIRS` files from your console's storage). **Drag the package
 files, or a folder of them, onto `install-dlc.bat`** (needs [Python 3](https://www.python.org)). Each pack is unpacked
 into `userdata/0000000000000000/545408B2/00000002/` with a content header, which is where the game looks for
 marketplace content. Packages for other games and title updates are skipped. To remove a pack, delete its folder and

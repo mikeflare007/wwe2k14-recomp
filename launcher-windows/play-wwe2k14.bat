@@ -6,14 +6,6 @@ set "HERE=%~dp0"
 set "GAME=%HERE%game"
 cd /d "%HERE%"
 
-rem New build delivered: join the download parts, unpack wwe2k14.exe + DLLs, then remove the parts
-if exist "%HERE%wwe2k14-build.zip.000" (
-  echo Unpacking the new game build...
-  copy /b "wwe2k14-build.zip.000"+"wwe2k14-build.zip.001" "wwe2k14-build.zip" >nul || goto :fail
-  tar -xf "wwe2k14-build.zip" || goto :fail
-  del "wwe2k14-build.zip" "wwe2k14-build.zip.000" "wwe2k14-build.zip.001"
-)
-
 rem ---- Settings (settings.txt next to this file) ----
 set "RES=4k"
 set "FPS=original"
@@ -43,9 +35,38 @@ set "FS=--fullscreen=false"
 if /i "%FULL%"=="yes" set "FS=--fullscreen=true"
 
 if not exist "%GAME%\default.xex" (
-  echo Can't find default.xex in "%GAME%". Set game_folder= in settings.txt.
+  echo Can't find your game. Put your extracted WWE 2K14 folder ^(the one with default.xex^) next to this file
+  echo and name it "game", or set game_folder= in settings.txt.
   goto :fail
 )
+
+rem ---- Title update 2.0.1.0: unpacked once from your own TU file in the title-update folder ----
+if not exist "%HERE%update\default.xexp" (
+  set "TU="
+  if exist "%HERE%title-update\" for %%f in ("%HERE%title-update\*") do if /i not "%%~xf"==".txt" set "TU=%%f"
+  if not defined TU (
+    echo Title update 2.0.1.0 is needed. Put your own title update file
+    echo ^(named like tu00000002_00000000^) in the "title-update" folder next to this file, then run this again.
+    mkdir "%HERE%title-update" 2>nul
+    goto :fail
+  )
+  set "PY="
+  where py >nul 2>nul && set "PY=py -3"
+  if not defined PY where python >nul 2>nul && set "PY=python"
+  if not defined PY (
+    echo Unpacking the title update needs Python 3 ^(one time only^). Install it from https://www.python.org
+    echo ^(tick "Add python.exe to PATH"^), then run this again.
+    goto :fail
+  )
+  echo Unpacking your title update ^(one time only^)...
+  !PY! "%HERE%tools\extract-title-update.py" "!TU!" "%HERE%update" >nul || goto :fail
+  if not exist "%HERE%update\default.xexp" (
+    echo That file doesn't look like the WWE 2K14 title update 2.0.1.0.
+    rmdir /s /q "%HERE%update" 2>nul
+    goto :fail
+  )
+)
+if not exist "%GAME%\default.xexp" copy "%HERE%update\default.xexp" "%GAME%\" >nul
 mkdir "%HERE%logs" 2>nul
 mkdir "%HERE%userdata" 2>nul
 for /f %%t in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "STAMP=%%t"
@@ -60,7 +81,8 @@ echo The first matches can stutter while graphics shaders are built; it gets smo
 echo Log file: %LOG%
 "%HERE%wwe2k14.exe" "%GAME%" %FS% %FX% --vulkan_allow_present_mode_immediate=false --ignore_offset_for_ranged_allocations=true --log_verbose=false --mnk_mode=true "--log_file=%LOG%" "--user_data_root=%HERE%userdata" --debug_ui=false
 echo.
-echo The game closed (exit code %errorlevel%). If something went wrong, the log is in the logs folder.
+echo The game closed (exit code %errorlevel%). If it crashed, report it on GitHub with the newest file from the logs folder:
+echo https://github.com/mikeflare007/wwe2k14-recomp/issues
 pause
 exit /b 0
 

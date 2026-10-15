@@ -17,9 +17,9 @@ or content from your copy.
 The images in docs/screenshots are screenshots of the port running, shown
 only to document it; the content they show belongs to its owners.
 
-Executables built from this repository are a static recompilation derived
-from the game's executable code. Build them only from your own copy and do
-not redistribute them. The required game data remains user-supplied.
+The program (wwe2k14.exe) is a static recompilation of the game's
+executable code. It contains no game data and does nothing without your own
+game files, which you must supply yourself.
 Neither this notice nor this project's BSD 3-Clause license (which covers
 only this project's hand-written code) grants rights to the original game, its code,
 assets, or trademarks.
