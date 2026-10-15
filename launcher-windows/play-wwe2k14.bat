@@ -35,15 +35,10 @@ if "%FPS%"=="30" set "WWE2K14_KEEP_30=1"
 if /i "%FPS%"=="original" set "WWE2K14_KEEP_30=1"
 set "FS=--fullscreen=false"
 if /i "%FULL%"=="yes" set "FS=--fullscreen=true"
-rem texture_fix: copy wrestler textures the game builds on the GPU (managers such as Miss Elizabeth,
-rem alternate attires) back to the CPU. Only the memory the game builds them in is copied, so the
-rem frame rate stays up. Without it these models render black or rainbow-striped (GitHub issue #1).
-set "TX="
-set "WWE13_READBACK_RANGE="
-if /i not "%TEXFIX%"=="off" (
-  set "TX=--readback_resolve=full"
-  set "WWE13_READBACK_RANGE=17F00000-1EC3E000"
-)
+rem texture_fix: the game exe copies textures the game builds on the GPU (managers, alternate and
+rem created attires) back right before the game reads them (GitHub issue #1). off turns that off.
+set "WWE2K14_UNTILE_COHERENCY="
+if /i "%TEXFIX%"=="off" set "WWE2K14_UNTILE_COHERENCY=0"
 
 if not exist "%GAME%\default.xex" (
   echo Can't find your game. Put your extracted WWE 2K14 folder ^(the one with default.xex^) next to this file
@@ -90,7 +85,7 @@ set REX_MOUNT_CACHE=true
 echo Starting WWE 2K14 at %RES%, fps=%FPS% (change these in settings.txt).
 echo The first matches can stutter while graphics shaders are built; it gets smoother as the cache fills.
 echo Log file: %LOG%
-"%HERE%wwe2k14.exe" "%GAME%" %FS% %FX% %TX% --vulkan_allow_present_mode_immediate=false --ignore_offset_for_ranged_allocations=true --log_verbose=false --mnk_mode=true "--log_file=%LOG%" "--user_data_root=%HERE%userdata" --debug_ui=false
+"%HERE%wwe2k14.exe" "%GAME%" %FS% %FX% --vulkan_allow_present_mode_immediate=false --ignore_offset_for_ranged_allocations=true --log_verbose=false --mnk_mode=true "--log_file=%LOG%" "--user_data_root=%HERE%userdata" --debug_ui=false
 echo.
 echo The game closed (exit code %errorlevel%). If it crashed, report it on GitHub with the newest file from the logs folder:
 echo https://github.com/mikeflare007/wwe2k14-recomp/issues

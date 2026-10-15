@@ -28,7 +28,7 @@ Running natively on Windows (1440p, 60 FPS):
 | 60 FPS gameplay | ✅ (entrances and cutscenes keep the game's own 30 FPS, so they play at natural speed) |
 | Resolution | 720p (native), 1440p, 4K, or **4K-FSR** (1440p render + AMD FSR upscale: close to 4K at 1440p speed) |
 | Cloth (jackets, dresses: e.g. Bobby Heenan, Miss Elizabeth) | ✅ fixed |
-| Managers and alternate attires (black or rainbow-striped models) | ✅ fixed in the launcher (`texture_fix=on`) |
+| Managers, alternate and created attires (were black or rainbow-striped) | ✅ fixed |
 | Menu music, entrance themes, commentary | ✅ |
 | DLC packs | supported via `install-dlc.bat` (installer tested on package format; in-game DLC testing welcome) |
 | Mods (file replacement) | drop-in through `update\` (see [Mods](#mods)) |
@@ -47,7 +47,9 @@ You need your own WWE 2K14 game files and a Vulkan-capable GPU.
 3. **Title update 2.0.1.0** (media ID `0D94D1D2`): put your own TU file (named like `tu00000002_00000000`) in the
    `title-update` folder. The launcher unpacks it on the first start (needs [Python 3](https://www.python.org), with
    "Add python.exe to PATH" ticked).
-4. Edit `settings.txt` if you like, then double-click `play-wwe2k14.bat`.
+4. Double-click **`WWE 2K14 Recomp.exe`**. The launcher lets you pick resolution, frame rate, fullscreen and your game
+   folder, back up saves, install DLC and open the logs. Press **Play**. (`play-wwe2k14.bat` still works too and reads
+   the same `settings.txt`.) For Steam, add `WWE 2K14 Recomp.exe` as a non-Steam game.
 
 You can also build `wwe2k14.exe` yourself; see [Building](#building).
 
@@ -62,7 +64,7 @@ graphics shaders are being built. They are cached in `userdata/`, so it gets smo
 | `resolution` | `720p`, `1440p`, `4k`, `4k-fsr` |
 | `fps` | `original` (60, with entrances and cutscenes at 30), or `60` (everything at 60; entrances run too fast) |
 | `fullscreen` | `yes` / `no` (F11 toggles in game) |
-| `texture_fix` | `on` (default) / `off`: copies the textures the game builds for managers and alternate attires back from the GPU, so they don't render black or striped |
+| `texture_fix` | `on` (default) / `off`: copies textures the game builds on the GPU (managers, alternate and created attires) back before the game reads them, so they don't render black or striped |
 
 Keyboard and mouse work through the built-in controller emulation, and Xbox controllers work as normal.
 
@@ -111,6 +113,10 @@ WWE 2K14 runs on the same Yuke's engine as WWE '13, so this port starts from
 - **Cloth race** (`src/cloth_handshake_2k14.cpp`). On PC the Havok cloth thread can finish before the game clears its
   "done" event, so the signal is lost and jackets and dresses rendered as garbage. The fix clears the event before
   signalling the thread.
+- **Black / striped managers and attires** (`src/untile_coherency_2k14.cpp`, issue #1). The game builds some wrestler
+  textures on the GPU (Miss Elizabeth, Stephanie, alternate and created attires), then untiles them on the CPU with
+  `XGUntileSurface`. The recompiled GPU keeps those results in its own memory, so the CPU read stale data. The hook reads
+  back exactly each untiled surface first (the WWE '13 Recomp fix), so there is no per-frame cost.
 - **60 FPS** (`src/present_interval_2k14.cpp`). The game's present-interval setter is overridden, with an opt-out that
   keeps the original timing.
 - **4K / 4K-FSR**: integer resolution scaling, plus FSR upscaling at present time.

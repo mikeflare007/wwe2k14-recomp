@@ -66,7 +66,8 @@ add_executable(wwe2k14
   src/single_instance.cpp
   src/startup_probe.cpp
   src/present_interval_2k14.cpp
-  src/cloth_handshake_2k14.cpp)
+  src/cloth_handshake_2k14.cpp
+  src/untile_coherency_2k14.cpp)
 target_include_directories(wwe2k14 PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 rexglue_setup_target(wwe2k14)
 if(WIN32)

@@ -17,6 +17,6 @@ fps=original
 fullscreen=yes
 
 # texture_fix: on or off
-#   on  = managers (Miss Elizabeth, Bobby Heenan, ...) and alternate attires load correctly
+#   on  = managers (Miss Elizabeth, Stephanie, ...) and alternate/created attires load correctly
 #   off = old behaviour (those models can render black or rainbow-striped)
 texture_fix=on
