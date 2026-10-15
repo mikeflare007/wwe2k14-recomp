@@ -1,0 +1,218 @@
+From f5d37db70e9e73c0fc57fb85cc4568330a89415b Mon Sep 17 00:00:00 2001
+From: mikeflare007 <mikeflare007@users.noreply.github.com>
+Date: Thu, 15 Oct 2026 02:54:04 -0400
+Subject: [PATCH] Diagnostics and compatibility: import-call tracer,
+ signin_user0 and xmp_report_title_controller cvars
+
+- REX_IMPORT_TRACE=1 logs every implemented kernel/XAM import with caller, args and
+  result (rate-limited for hot calls); force-included into rexkernel only.
+- signin_user0=false reports no signed-in profile.
+- xmp_report_title_controller=false makes XMPGetPlaybackController report (0,0) as Xenia does.
+
+---
+ src/core/logging.cpp            | 53 +++++++++++++++++++++++++++++++++
+ src/kernel/CMakeLists.txt       |  4 +++
+ src/kernel/import_trace_hook.h  | 28 +++++++++++++++++
+ src/kernel/xam/apps/xmp_app.cpp |  9 ++++--
+ src/kernel/xam/xam_user.cpp     | 16 ++++++++--
+ 5 files changed, 105 insertions(+), 5 deletions(-)
+ create mode 100644 src/kernel/import_trace_hook.h
+
+diff --git a/src/core/logging.cpp b/src/core/logging.cpp
+index 676ba1f..ea37396 100644
+--- a/src/core/logging.cpp
++++ b/src/core/logging.cpp
+@@ -14,8 +14,11 @@
+ #include <cerrno>
+ #include <chrono>
+ #include <cstdio>
++#include <cstdlib>
++#include <cstring>
+ #include <filesystem>
+ #include <mutex>
++#include <thread>
+ #include <unordered_map>
+ #include <vector>
+ 
+@@ -554,4 +557,54 @@ void SetCategoryLevel(LogCategory category, spdlog::level::level_enum level) {
+   SetCategoryLevel(CategoryToId(category), level);
+ }
+ 
++namespace detail {
++namespace {
++bool ImportTraceFromEnv() {
++  const char* v = std::getenv("REX_IMPORT_TRACE");
++  return v != nullptr && v[0] != '\0' && v[0] != '0';
++}
++}  // namespace
++bool g_import_trace = ImportTraceFromEnv();
++
++void ImportTraceLog(const char* name, uint32_t lr, uint64_t r3, uint64_t r4, uint64_t r5,
++                    uint64_t r6, uint64_t result) {
++  // Keep the log readable: only known per-frame / lock / wait calls are rate-limited (first
++  // 40 per import+caller+thread, then every 5000th); everything else is always logged.
++  static const char* const kHot[] = {
++      "CriticalSection", "NtSetEvent", "NtClearEvent", "NtWaitFor", "KeWaitFor", "KeSetEvent",
++      "KeDelayExecutionThread", "KeTlsGetValue", "KeTlsSetValue", "KeGetCurrentProcessType",
++      "SpinLock", "XAudio", "XamInput", "XNotifyGetNext", "VdSwap", "VdGetSystemCommandBuffer",
++      "VdRetrainEDRAM", "XNetGetEthernetLinkStatus", "KeQueryPerformanceFrequency",
++      "CriticalRegion", "NtReleaseMutant", "KeReleaseMutant", "NtYieldExecution",
++      "KeQuerySystemTime", "NtQuerySystemTime", "MmQueryAddressProtect", "MmGetPhysicalAddress",
++      "KeResetEvent", "KePulseEvent", "NtPulseEvent", "ObReferenceObjectByHandle",
++      "ObDereferenceObject", "KeSetBasePriorityThread", "KeQueryBasePriorityThread"};
++  bool hot = false;
++  for (const char* h : kHot) {
++    if (std::strstr(name, h) != nullptr) {
++      hot = true;
++      break;
++    }
++  }
++  uint64_t n = 0;
++  if (hot) {
++    static std::mutex mu;
++    static std::unordered_map<uint64_t, uint64_t> counts;
++    thread_local const uint64_t tid_salt =
++        std::hash<std::thread::id>{}(std::this_thread::get_id()) * 0x9E3779B97F4A7C15ull;
++    std::lock_guard<std::mutex> lock(mu);
++    n = ++counts[((reinterpret_cast<uintptr_t>(name) << 32) ^ lr) ^ tid_salt];
++    if (n > 40 && (n % 5000) != 0) {
++      return;
++    }
++  }
++  if (std::strncmp(name, "__imp__", 7) == 0) {
++    name += 7;
++  }
++  REXKRNL_INFO("[imp] #{} {} lr={:08X} ({:X}, {:X}, {:X}, {:X}) -> {:X}", n, name, lr,
++               static_cast<uint32_t>(r3), static_cast<uint32_t>(r4), static_cast<uint32_t>(r5),
++               static_cast<uint32_t>(r6), static_cast<uint32_t>(result));
++}
++}  // namespace detail
++
+ }  // namespace rex
+diff --git a/src/kernel/CMakeLists.txt b/src/kernel/CMakeLists.txt
+index 5e722c1..dd13091 100644
+--- a/src/kernel/CMakeLists.txt
++++ b/src/kernel/CMakeLists.txt
+@@ -66,6 +66,10 @@ set(REXKERNEL_SOURCES
+ add_library(rexkernel STATIC ${REXKERNEL_SOURCES})
+ add_library(rex::kernel ALIAS rexkernel)
+ 
++# Diagnostic import-call tracing (REX_IMPORT_TRACE=1); see import_trace_hook.h.
++target_compile_options(rexkernel PRIVATE
++    "SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/import_trace_hook.h")
++
+ target_include_directories(rexkernel PUBLIC
+     $<BUILD_INTERFACE:${REXGLUE_ROOT}/include>
+     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+diff --git a/src/kernel/import_trace_hook.h b/src/kernel/import_trace_hook.h
+new file mode 100644
+index 0000000..f2b9394
+--- /dev/null
++++ b/src/kernel/import_trace_hook.h
+@@ -0,0 +1,28 @@
++// Force-included into rexkernel sources only (not an installed header, so game code that
++// includes <rex/ppc.h> is unaffected). Redefines PPC_HOOK so every implemented kernel/XAM
++// export can be logged with its guest caller, arguments and result when REX_IMPORT_TRACE=1.
++#pragma once
++#include <rex/ppc/function.h>
++
++namespace rex::detail {
++extern bool g_import_trace;
++void ImportTraceLog(const char* name, uint32_t lr, uint64_t r3, uint64_t r4, uint64_t r5,
++                    uint64_t r6, uint64_t result);
++}  // namespace rex::detail
++
++#ifndef REXGLUE_ENABLE_PROFILING
++#undef PPC_HOOK
++#define PPC_HOOK(subroutine, function)                                                    \
++  extern "C" PPC_FUNC(subroutine) {                                                       \
++    if (rex::detail::g_import_trace) [[unlikely]] {                                       \
++      const uint32_t _it_lr = static_cast<uint32_t>(ctx.lr);                              \
++      const uint64_t _it_a = ctx.r3.u64, _it_b = ctx.r4.u64, _it_c = ctx.r5.u64,          \
++                     _it_d = ctx.r6.u64;                                                  \
++      rex::HostToGuestFunction<function>(ctx, base);                                      \
++      rex::detail::ImportTraceLog(#subroutine, _it_lr, _it_a, _it_b, _it_c, _it_d,        \
++                                  ctx.r3.u64);                                            \
++    } else {                                                                              \
++      rex::HostToGuestFunction<function>(ctx, base);                                      \
++    }                                                                                     \
++  }
++#endif
+diff --git a/src/kernel/xam/apps/xmp_app.cpp b/src/kernel/xam/apps/xmp_app.cpp
+index a276d42..65b3557 100644
+--- a/src/kernel/xam/apps/xmp_app.cpp
++++ b/src/kernel/xam/apps/xmp_app.cpp
+@@ -29,6 +29,8 @@
+ #include <cstring>
+ #include <system_error>
+ 
++REXCVAR_DEFINE_BOOL(xmp_report_title_controller, true, "XMP",
++                    "XMPGetPlaybackController reports the stored playback client (false = always 0, as Xenia)");
+ REXCVAR_DEFINE_STRING(xmp_music_dir, "", "XMP",
+                       "Host folder containing custom XMP music (empty uses <exe>/music)");
+ 
+@@ -680,8 +682,11 @@ X_HRESULT XmpApp::DispatchMessageSync(uint32_t message, uint32_t buffer_ptr,
+       // are zero. The controller word is not tracked by this app and the title's
+       // own setter calls always pass controller == 0, so it stays 0.
+       memory::store_and_swap<uint32_t>(memory_->TranslateVirtual(args->controller_ptr), 0);
+-      memory::store_and_swap<uint32_t>(memory_->TranslateVirtual(args->locked_ptr),
+-                                       static_cast<uint32_t>(playback_client_));
++      // xmp_report_title_controller=false reports (0, 0) like Xenia: WWE 2K14 treats a non-zero
++      // word here as "the system music player owns playback" and mutes its menu/entrance music.
++      memory::store_and_swap<uint32_t>(
++          memory_->TranslateVirtual(args->locked_ptr),
++          REXCVAR_GET(xmp_report_title_controller) ? static_cast<uint32_t>(playback_client_) : 0u);
+       if (XmpStateProbeEnabled()) {
+         const uint64_t count =
+             get_playback_controller_log_count_.load(std::memory_order_relaxed);
+diff --git a/src/kernel/xam/xam_user.cpp b/src/kernel/xam/xam_user.cpp
+index e53951e..0cf5d44 100644
+--- a/src/kernel/xam/xam_user.cpp
++++ b/src/kernel/xam/xam_user.cpp
+@@ -36,6 +36,16 @@ namespace xam {
+ using namespace rex::system;
+ using namespace rex::system::xam;
+ 
++// signin_user0=false reports no signed-in profile (what Xenia shows without a created profile).
++REXCVAR_DEFINE_BOOL(signin_user0, true, "Kernel",
++                    "Report a profile signed in on controller 1 (false = nobody signed in)");
++
++namespace {
++bool User0SignedIn() {
++  return REXCVAR_GET(signin_user0);
++}
++}  // namespace
++
+ ppc_hresult_result_t XamUserGetXUID_entry(ppc_u32_t user_index, ppc_u32_t type_mask,
+                                           ppc_pu64_t xuid_ptr) {
+   assert_true(type_mask == 1 || type_mask == 2 || type_mask == 3 || type_mask == 4 ||
+@@ -46,7 +56,7 @@ ppc_hresult_result_t XamUserGetXUID_entry(ppc_u32_t user_index, ppc_u32_t type_m
+   uint32_t result = X_E_NO_SUCH_USER;
+   uint64_t xuid = 0;
+   if (user_index < 4) {
+-    if (user_index == 0) {
++    if (user_index == 0 && User0SignedIn()) {
+       const auto& user_profile = REX_KERNEL_STATE()->user_profile();
+       auto type = user_profile->type() & type_mask;
+       if (type & (2 | 4)) {
+@@ -69,7 +79,7 @@ ppc_hresult_result_t XamUserGetXUID_entry(ppc_u32_t user_index, ppc_u32_t type_m
+ ppc_u32_result_t XamUserGetSigninState_entry(ppc_u32_t user_index) {
+   uint32_t signin_state = 0;
+   if (user_index < 4) {
+-    if (user_index == 0) {
++    if (user_index == 0 && User0SignedIn()) {
+       const auto& user_profile = REX_KERNEL_STATE()->user_profile();
+       signin_state = user_profile->signin_state();
+     }
+@@ -94,7 +104,7 @@ ppc_hresult_result_t XamUserGetSigninInfo_entry(ppc_u32_t user_index, ppc_u32_t
+   }
+ 
+   std::memset(info, 0, sizeof(X_USER_SIGNIN_INFO));
+-  if (user_index) {
++  if (user_index || !User0SignedIn()) {
+     return X_E_NO_SUCH_USER;
+   }
+ 
+-- 
+2.43.0
+

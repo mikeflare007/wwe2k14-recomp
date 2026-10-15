@@ -1,0 +1,401 @@
+# WWE 2K14 (TU 2.0.1.0, media 0D94D1D2) function boundary overrides.
+# WWE '13's list lives in the WWE '13 Recomp repository (its addresses do not apply to 2K14).
+
+[functions]
+
+# Pass-1 UnresolvedCall fixes
+0x82EE50B0 = { name = "wwe2k14_vtbl_fwd_82EE50B0", size = 0x48 }   # frameless; two guarded vtable tail calls, ends blr 0x82EE50F4; tail-called from 0x82EED6EC
+0x8276A510 = { name = "wwe2k14_thunk_8276A510", size = 0x8 }        # 2-instr thunk: lwz r3,0(r3); b 0x827A8F50
+0x82F59280 = { name = "wwe2k14_leaf_82F59280", end = 0x82F592F0 }   # leaf; out-of-line block 0x82F592E8 (mr r8,r10; b 0x82F592BC) after its blr
+0x82F57E60 = { name = "wwe2k14_leaf_82F57E60", end = 0x82F57ED8 }   # same shape; out-of-line block 0x82F57ED0 after tail call
+
+# C++ static initializer (__xc_a table entry) skipped by analysis: sits right after sub_834C8328's final `b`.
+# Boot crash 2026-10-14: [missing-function] indirect call to 0x834C8D40 from _initterm (lr=0x82264080).
+0x834C8D40 = { name = "wwe2k14_xc_init_834C8D40", size = 0xC }   # lis/addi/b 0x82C7D028
+
+# Address-taken functions found by scanning lis/addi pointer loads (would crash on first indirect call).
+0x82BB9850 = { name = "wwe2k14_qsort_cmp_82BB9850", size = 0x10 }  # comparator passed to qsort at 0x82BB9B80; was absorbed into sub_82BB94F0
+0x82CFF488 = { name = "wwe2k14_math_82CFF488", size = 0x10 }       # 4-instr entry, tail b 0x82CFF2C0
+0x82CFF498 = { name = "wwe2k14_math_82CFF498", size = 0x10 }       # returned as a function pointer by 0x82D005C0
+0x82CFF4A8 = { name = "wwe2k14_math_82CFF4A8", end = 0x82CFF520 }  # returned as a function pointer by 0x82D005CC
+
+# ---- Pointer-only functions found by static audit (2026-10-14) ----
+# dataptr: address stored in data (vtables, callback tables), code starts after blr/b/padding.
+# adjthunk-shaped candidates are kept only when their address is stored somewhere (none were); the
+# pattern also matches switch-case blocks inside larger functions (0x8268C174, 0x82C748A4 failed codegen).
+# vcall: C++ pointer-to-member trampolines (lwz rA,0(r3); lwz rB,off(rA); mtctr rB; bctr); runs were merged by analysis.
+# adjthunk: multiple-inheritance adjustor thunks (addi r3,r3,imm; b target).
+# Excluded: any candidate that other code branches into the middle of (part of a larger function),
+# and switch-case blocks reached through jump tables (they compiled as goto into another function),
+# the compiler's register save/restore helpers (__savegprlr_14, __restgprlr_14, __savefpr_14, __restfpr_14,
+# __savevmx_14, __restvmx_14: splitting these corrupted registers everywhere -> garbage strings, boot crash #3),
+# and XEX import stubs (0x8359A684-0x8359B764; the SDK provides them as __imp__<name>).
+# Boot crash #2 was dataptr 0x82D2B818 (vtable slot 0x6C, table 0x82093EDC).
+0x82277920 = { name = "wwe2k14_dataptr_82277920", end = 0x82277934 }
+0x82299008 = { name = "wwe2k14_dataptr_82299008", end = 0x82299010 }
+0x82299020 = { name = "wwe2k14_dataptr_82299020", end = 0x82299028 }
+0x82299A78 = { name = "wwe2k14_dataptr_82299A78", end = 0x82299A84 }
+0x8229DB80 = { name = "wwe2k14_dataptr_8229DB80", end = 0x8229DBB8 }
+0x8230B950 = { name = "wwe2k14_dataptr_8230B950", end = 0x8230B958 }
+0x82341FA0 = { name = "wwe2k14_dataptr_82341FA0", end = 0x82341FB0 }
+0x823A4568 = { name = "wwe2k14_dataptr_823A4568", end = 0x823A456C }
+0x823F24C8 = { name = "wwe2k14_dataptr_823F24C8", end = 0x823F24D8 }
+0x823F24D8 = { name = "wwe2k14_dataptr_823F24D8", end = 0x823F24E8 }
+0x823F2538 = { name = "wwe2k14_dataptr_823F2538", end = 0x823F2548 }
+0x823F2548 = { name = "wwe2k14_dataptr_823F2548", end = 0x823F2558 }
+0x823F25A8 = { name = "wwe2k14_dataptr_823F25A8", end = 0x823F25B8 }
+0x823F25B8 = { name = "wwe2k14_dataptr_823F25B8", end = 0x823F25C8 }
+0x823F2618 = { name = "wwe2k14_dataptr_823F2618", end = 0x823F2628 }
+0x823F2628 = { name = "wwe2k14_dataptr_823F2628", end = 0x823F2638 }
+0x823F2678 = { name = "wwe2k14_dataptr_823F2678", end = 0x823F2688 }
+0x823F2688 = { name = "wwe2k14_dataptr_823F2688", end = 0x823F2698 }
+0x823F26D8 = { name = "wwe2k14_dataptr_823F26D8", end = 0x823F26E8 }
+0x823F26E8 = { name = "wwe2k14_dataptr_823F26E8", end = 0x823F26F8 }
+0x823F2738 = { name = "wwe2k14_dataptr_823F2738", end = 0x823F2748 }
+0x823F2748 = { name = "wwe2k14_dataptr_823F2748", end = 0x823F2758 }
+0x823F2758 = { name = "wwe2k14_dataptr_823F2758", end = 0x823F2768 }
+0x823F27A8 = { name = "wwe2k14_dataptr_823F27A8", end = 0x823F27B8 }
+0x823F27B8 = { name = "wwe2k14_dataptr_823F27B8", end = 0x823F27C8 }
+0x823F27C8 = { name = "wwe2k14_dataptr_823F27C8", end = 0x823F27D8 }
+0x823F2818 = { name = "wwe2k14_dataptr_823F2818", end = 0x823F2828 }
+0x823F2828 = { name = "wwe2k14_dataptr_823F2828", end = 0x823F2838 }
+0x823F2838 = { name = "wwe2k14_dataptr_823F2838", end = 0x823F2848 }
+0x823F2898 = { name = "wwe2k14_dataptr_823F2898", end = 0x823F28A8 }
+0x823F28F8 = { name = "wwe2k14_dataptr_823F28F8", end = 0x823F2908 }
+0x823F2908 = { name = "wwe2k14_dataptr_823F2908", end = 0x823F2918 }
+0x823F2958 = { name = "wwe2k14_dataptr_823F2958", end = 0x823F2968 }
+0x823F2968 = { name = "wwe2k14_dataptr_823F2968", end = 0x823F2978 }
+0x823F29B8 = { name = "wwe2k14_dataptr_823F29B8", end = 0x823F29C8 }
+0x823F29C8 = { name = "wwe2k14_dataptr_823F29C8", end = 0x823F29D8 }
+0x823F2A18 = { name = "wwe2k14_dataptr_823F2A18", end = 0x823F2A28 }
+0x823F2A28 = { name = "wwe2k14_dataptr_823F2A28", end = 0x823F2A38 }
+0x823F2A78 = { name = "wwe2k14_dataptr_823F2A78", end = 0x823F2A88 }
+0x823F2A88 = { name = "wwe2k14_dataptr_823F2A88", end = 0x823F2A98 }
+0x823F2A98 = { name = "wwe2k14_dataptr_823F2A98", end = 0x823F2AA8 }
+0x823F2AF8 = { name = "wwe2k14_dataptr_823F2AF8", end = 0x823F2B08 }
+0x823F2B08 = { name = "wwe2k14_dataptr_823F2B08", end = 0x823F2B18 }
+0x823F2B58 = { name = "wwe2k14_dataptr_823F2B58", end = 0x823F2B68 }
+0x823F2B68 = { name = "wwe2k14_dataptr_823F2B68", end = 0x823F2B78 }
+0x823F2B78 = { name = "wwe2k14_dataptr_823F2B78", end = 0x823F2B88 }
+0x823F2BD8 = { name = "wwe2k14_dataptr_823F2BD8", end = 0x823F2BE8 }
+0x823F2BE8 = { name = "wwe2k14_dataptr_823F2BE8", end = 0x823F2BF8 }
+0x823F2C48 = { name = "wwe2k14_dataptr_823F2C48", end = 0x823F2C58 }
+0x823F2C58 = { name = "wwe2k14_dataptr_823F2C58", end = 0x823F2C68 }
+0x823F2CA8 = { name = "wwe2k14_dataptr_823F2CA8", end = 0x823F2CB8 }
+0x823F2CB8 = { name = "wwe2k14_dataptr_823F2CB8", end = 0x823F2CC8 }
+0x823F2D08 = { name = "wwe2k14_dataptr_823F2D08", end = 0x823F2D18 }
+0x823F2D18 = { name = "wwe2k14_dataptr_823F2D18", end = 0x823F2D28 }
+0x823F2D68 = { name = "wwe2k14_dataptr_823F2D68", end = 0x823F2D78 }
+0x823F2D78 = { name = "wwe2k14_dataptr_823F2D78", end = 0x823F2D88 }
+0x823F2DC8 = { name = "wwe2k14_dataptr_823F2DC8", end = 0x823F2DD8 }
+0x823F2DD8 = { name = "wwe2k14_dataptr_823F2DD8", end = 0x823F2DE8 }
+0x823F2DE8 = { name = "wwe2k14_dataptr_823F2DE8", end = 0x823F2DF8 }
+0x823F2E48 = { name = "wwe2k14_dataptr_823F2E48", end = 0x823F2E58 }
+0x823F2E58 = { name = "wwe2k14_dataptr_823F2E58", end = 0x823F2E68 }
+0x823F2EA8 = { name = "wwe2k14_dataptr_823F2EA8", end = 0x823F2EB8 }
+0x823F2EB8 = { name = "wwe2k14_dataptr_823F2EB8", end = 0x823F2EC8 }
+0x823F2EC8 = { name = "wwe2k14_dataptr_823F2EC8", end = 0x823F2ED8 }
+0x823F2F28 = { name = "wwe2k14_dataptr_823F2F28", end = 0x823F2F38 }
+0x823F2F38 = { name = "wwe2k14_dataptr_823F2F38", end = 0x823F2F48 }
+0x823F2F98 = { name = "wwe2k14_dataptr_823F2F98", end = 0x823F2FA8 }
+0x823F2FA8 = { name = "wwe2k14_dataptr_823F2FA8", end = 0x823F2FB8 }
+0x823F2FF8 = { name = "wwe2k14_dataptr_823F2FF8", end = 0x823F3008 }
+0x823F3008 = { name = "wwe2k14_dataptr_823F3008", end = 0x823F3018 }
+0x823F3058 = { name = "wwe2k14_dataptr_823F3058", end = 0x823F3068 }
+0x823F3068 = { name = "wwe2k14_dataptr_823F3068", end = 0x823F3078 }
+0x823F30B8 = { name = "wwe2k14_dataptr_823F30B8", end = 0x823F30C8 }
+0x823F30C8 = { name = "wwe2k14_dataptr_823F30C8", end = 0x823F30D8 }
+0x823F3118 = { name = "wwe2k14_dataptr_823F3118", end = 0x823F3128 }
+0x823F3128 = { name = "wwe2k14_dataptr_823F3128", end = 0x823F3138 }
+0x823F3138 = { name = "wwe2k14_dataptr_823F3138", end = 0x823F3148 }
+0x8240C530 = { name = "wwe2k14_dataptr_8240C530", end = 0x8240C540 }
+0x8240C540 = { name = "wwe2k14_dataptr_8240C540", end = 0x8240C550 }
+0x8240C550 = { name = "wwe2k14_dataptr_8240C550", end = 0x8240C560 }
+0x8240C560 = { name = "wwe2k14_dataptr_8240C560", end = 0x8240C570 }
+0x8240C570 = { name = "wwe2k14_dataptr_8240C570", end = 0x8240C57C }
+0x82503378 = { name = "wwe2k14_dataptr_82503378", end = 0x8250338C }
+0x82626D38 = { name = "wwe2k14_dataptr_82626D38", end = 0x82626D58 }
+0x82893308 = { name = "wwe2k14_dataptr_82893308", end = 0x82893320 }
+0x82893320 = { name = "wwe2k14_dataptr_82893320", end = 0x82893328 }
+0x828987B0 = { name = "wwe2k14_dataptr_828987B0", end = 0x828987C0 }
+0x8289D2D8 = { name = "wwe2k14_dataptr_8289D2D8", end = 0x8289D30C }
+0x828B2350 = { name = "wwe2k14_dataptr_828B2350", end = 0x828B2364 }
+0x828D73F8 = { name = "wwe2k14_dataptr_828D73F8", end = 0x828D740C }
+0x828E7670 = { name = "wwe2k14_dataptr_828E7670", end = 0x828E7688 }
+0x828FF548 = { name = "wwe2k14_dataptr_828FF548", end = 0x828FF550 }
+0x8294C320 = { name = "wwe2k14_dataptr_8294C320", end = 0x8294C32C }
+0x82989A68 = { name = "wwe2k14_dataptr_82989A68", end = 0x82989A78 }
+0x82989A78 = { name = "wwe2k14_dataptr_82989A78", end = 0x82989AAC }
+0x829A09F0 = { name = "wwe2k14_dataptr_829A09F0", end = 0x829A0A00 }
+0x829A6B30 = { name = "wwe2k14_dataptr_829A6B30", end = 0x829A6B40 }
+0x829A80A8 = { name = "wwe2k14_dataptr_829A80A8", end = 0x829A80B8 }
+0x82AA6568 = { name = "wwe2k14_dataptr_82AA6568", end = 0x82AA6578 }
+0x82B1EA88 = { name = "wwe2k14_dataptr_82B1EA88", end = 0x82B1EA94 }
+0x82B1F8A0 = { name = "wwe2k14_dataptr_82B1F8A0", end = 0x82B1F8AC }
+0x82B20250 = { name = "wwe2k14_dataptr_82B20250", end = 0x82B2025C }
+0x82B20C88 = { name = "wwe2k14_dataptr_82B20C88", end = 0x82B20C94 }
+0x82B21A38 = { name = "wwe2k14_dataptr_82B21A38", end = 0x82B21A44 }
+0x82B22450 = { name = "wwe2k14_dataptr_82B22450", end = 0x82B2245C }
+0x82BC2878 = { name = "wwe2k14_dataptr_82BC2878", end = 0x82BC2900 }
+0x82BD1318 = { name = "wwe2k14_dataptr_82BD1318", end = 0x82BD1338 }
+0x82C85AD4 = { name = "wwe2k14_dataptr_82C85AD4", end = 0x82C85AFC }
+0x82C8C778 = { name = "wwe2k14_dataptr_82C8C778", end = 0x82C8C790 }
+0x82D241F8 = { name = "wwe2k14_dataptr_82D241F8", end = 0x82D24200 }
+0x82D266A0 = { name = "wwe2k14_dataptr_82D266A0", end = 0x82D266A8 }
+0x82D266A8 = { name = "wwe2k14_dataptr_82D266A8", end = 0x82D266B0 }
+0x82D266B0 = { name = "wwe2k14_dataptr_82D266B0", end = 0x82D266B8 }
+0x82D266C0 = { name = "wwe2k14_dataptr_82D266C0", end = 0x82D26718 }
+0x82D26718 = { name = "wwe2k14_dataptr_82D26718", end = 0x82D26720 }
+0x82D2B7F8 = { name = "wwe2k14_dataptr_82D2B7F8", end = 0x82D2B800 }
+0x82D2B800 = { name = "wwe2k14_dataptr_82D2B800", end = 0x82D2B808 }
+0x82D2B808 = { name = "wwe2k14_dataptr_82D2B808", end = 0x82D2B810 }
+0x82D2B810 = { name = "wwe2k14_dataptr_82D2B810", end = 0x82D2B818 }
+0x82D2B818 = { name = "wwe2k14_dataptr_82D2B818", end = 0x82D2B90C }
+0x82D2CBA8 = { name = "wwe2k14_dataptr_82D2CBA8", end = 0x82D2CBB0 }
+0x82D2CBB0 = { name = "wwe2k14_dataptr_82D2CBB0", end = 0x82D2CBB8 }
+0x82D2CBC0 = { name = "wwe2k14_dataptr_82D2CBC0", end = 0x82D2CBC8 }
+0x82D2CBC8 = { name = "wwe2k14_dataptr_82D2CBC8", end = 0x82D2CBD0 }
+0x82D2CBD0 = { name = "wwe2k14_dataptr_82D2CBD0", end = 0x82D2CBD8 }
+0x82D2CBD8 = { name = "wwe2k14_dataptr_82D2CBD8", end = 0x82D2CBE0 }
+0x82D2CBE0 = { name = "wwe2k14_dataptr_82D2CBE0", end = 0x82D2CBE8 }
+0x82D2CBE8 = { name = "wwe2k14_dataptr_82D2CBE8", end = 0x82D2CBF0 }
+0x82D2CBF0 = { name = "wwe2k14_dataptr_82D2CBF0", end = 0x82D2CBF8 }
+0x82D2CBF8 = { name = "wwe2k14_dataptr_82D2CBF8", end = 0x82D2CCF8 }
+0x82D2D350 = { name = "wwe2k14_dataptr_82D2D350", end = 0x82D2D368 }
+0x82D2E0D0 = { name = "wwe2k14_dataptr_82D2E0D0", end = 0x82D2E0D8 }
+0x82D2EE30 = { name = "wwe2k14_dataptr_82D2EE30", end = 0x82D2EE38 }
+0x82D31D20 = { name = "wwe2k14_dataptr_82D31D20", end = 0x82D31D4C }
+0x82D3FBD8 = { name = "wwe2k14_dataptr_82D3FBD8", end = 0x82D3FBE0 }
+0x82D3FBE0 = { name = "wwe2k14_dataptr_82D3FBE0", end = 0x82D3FBE8 }
+0x82D414E0 = { name = "wwe2k14_dataptr_82D414E0", end = 0x82D414E8 }
+0x82D41500 = { name = "wwe2k14_dataptr_82D41500", end = 0x82D41508 }
+0x82D41508 = { name = "wwe2k14_dataptr_82D41508", end = 0x82D41510 }
+0x82F34F80 = { name = "wwe2k14_dataptr_82F34F80", end = 0x82F35030 }
+0x82F54528 = { name = "wwe2k14_dataptr_82F54528", end = 0x82F545C4 }  # switch with 8 blr exits; was cut at the first blr
+0x82F55120 = { name = "wwe2k14_dataptr_82F55120", end = 0x82F5514C }
+0x833665F8 = { name = "wwe2k14_dataptr_833665F8", end = 0x83366600 }
+0x833B80E0 = { name = "wwe2k14_dataptr_833B80E0", end = 0x833B810C }
+0x833B9730 = { name = "wwe2k14_dataptr_833B9730", end = 0x833B9738 }
+0x83421450 = { name = "wwe2k14_dataptr_83421450", end = 0x83421458 }
+0x8343D0A4 = { name = "wwe2k14_dataptr_8343D0A4", end = 0x8343D0BC }
+0x823F2498 = { name = "wwe2k14_vcall_823F2498", end = 0x823F24A8 }
+0x823F24A8 = { name = "wwe2k14_vcall_823F24A8", end = 0x823F24B8 }
+0x823F24F8 = { name = "wwe2k14_vcall_823F24F8", end = 0x823F2508 }
+0x823F2528 = { name = "wwe2k14_vcall_823F2528", end = 0x823F2538 }
+0x823F2598 = { name = "wwe2k14_vcall_823F2598", end = 0x823F25A8 }
+0x823F25C8 = { name = "wwe2k14_vcall_823F25C8", end = 0x823F25D8 }
+0x823F2608 = { name = "wwe2k14_vcall_823F2608", end = 0x823F2618 }
+0x823F2638 = { name = "wwe2k14_vcall_823F2638", end = 0x823F2648 }
+0x823F2668 = { name = "wwe2k14_vcall_823F2668", end = 0x823F2678 }
+0x823F26A8 = { name = "wwe2k14_vcall_823F26A8", end = 0x823F26B8 }
+0x823F2708 = { name = "wwe2k14_vcall_823F2708", end = 0x823F2718 }
+0x823F2778 = { name = "wwe2k14_vcall_823F2778", end = 0x823F2788 }
+0x823F2788 = { name = "wwe2k14_vcall_823F2788", end = 0x823F2798 }
+0x823F27E8 = { name = "wwe2k14_vcall_823F27E8", end = 0x823F27F8 }
+0x823F27F8 = { name = "wwe2k14_vcall_823F27F8", end = 0x823F2808 }
+0x823F2888 = { name = "wwe2k14_vcall_823F2888", end = 0x823F2898 }
+0x823F28E8 = { name = "wwe2k14_vcall_823F28E8", end = 0x823F28F8 }
+0x823F2948 = { name = "wwe2k14_vcall_823F2948", end = 0x823F2958 }
+0x823F2978 = { name = "wwe2k14_vcall_823F2978", end = 0x823F2988 }
+0x823F29E8 = { name = "wwe2k14_vcall_823F29E8", end = 0x823F29F8 }
+0x823F2A48 = { name = "wwe2k14_vcall_823F2A48", end = 0x823F2A58 }
+0x823F2AC8 = { name = "wwe2k14_vcall_823F2AC8", end = 0x823F2AD8 }
+0x823F2AD8 = { name = "wwe2k14_vcall_823F2AD8", end = 0x823F2AE8 }
+0x823F2B28 = { name = "wwe2k14_vcall_823F2B28", end = 0x823F2B38 }
+0x823F2B38 = { name = "wwe2k14_vcall_823F2B38", end = 0x823F2B48 }
+0x823F2BC8 = { name = "wwe2k14_vcall_823F2BC8", end = 0x823F2BD8 }
+0x823F2C38 = { name = "wwe2k14_vcall_823F2C38", end = 0x823F2C48 }
+0x823F2C68 = { name = "wwe2k14_vcall_823F2C68", end = 0x823F2C78 }
+0x823F2C98 = { name = "wwe2k14_vcall_823F2C98", end = 0x823F2CA8 }
+0x823F2CC8 = { name = "wwe2k14_vcall_823F2CC8", end = 0x823F2CD8 }
+0x823F2D38 = { name = "wwe2k14_vcall_823F2D38", end = 0x823F2D48 }
+0x823F2D98 = { name = "wwe2k14_vcall_823F2D98", end = 0x823F2DA8 }
+0x823F2DA8 = { name = "wwe2k14_vcall_823F2DA8", end = 0x823F2DB8 }
+0x823F2E18 = { name = "wwe2k14_vcall_823F2E18", end = 0x823F2E28 }
+0x823F2E28 = { name = "wwe2k14_vcall_823F2E28", end = 0x823F2E38 }
+0x823F2E38 = { name = "wwe2k14_vcall_823F2E38", end = 0x823F2E48 }
+0x823F2E78 = { name = "wwe2k14_vcall_823F2E78", end = 0x823F2E88 }
+0x823F2F18 = { name = "wwe2k14_vcall_823F2F18", end = 0x823F2F28 }
+0x823F2F48 = { name = "wwe2k14_vcall_823F2F48", end = 0x823F2F58 }
+0x823F2F88 = { name = "wwe2k14_vcall_823F2F88", end = 0x823F2F98 }
+0x823F2FB8 = { name = "wwe2k14_vcall_823F2FB8", end = 0x823F2FC8 }
+0x823F2FE8 = { name = "wwe2k14_vcall_823F2FE8", end = 0x823F2FF8 }
+0x823F3028 = { name = "wwe2k14_vcall_823F3028", end = 0x823F3038 }
+0x823F3088 = { name = "wwe2k14_vcall_823F3088", end = 0x823F3098 }
+0x823F30E8 = { name = "wwe2k14_vcall_823F30E8", end = 0x823F30F8 }
+0x8294D7C4 = { name = "wwe2k14_vcall_8294D7C4", end = 0x8294D7D4 }
+0x829B73C8 = { name = "wwe2k14_vcall_829B73C8", end = 0x829B73D8 }
+0x833223E0 = { name = "wwe2k14_vcall_833223E0", end = 0x833223F0 }
+0x8232FA2C = { name = "wwe2k14_vcall_8232FA2C", end = 0x8232FA3C }
+0x823F2488 = { name = "wwe2k14_vcall_823F2488", end = 0x823F2498 }
+0x823F24B8 = { name = "wwe2k14_vcall_823F24B8", end = 0x823F24C8 }
+0x823F24E8 = { name = "wwe2k14_vcall_823F24E8", end = 0x823F24F8 }
+0x823F2508 = { name = "wwe2k14_vcall_823F2508", end = 0x823F2518 }
+0x823F2518 = { name = "wwe2k14_vcall_823F2518", end = 0x823F2528 }
+0x823F2558 = { name = "wwe2k14_vcall_823F2558", end = 0x823F2568 }
+0x823F2568 = { name = "wwe2k14_vcall_823F2568", end = 0x823F2578 }
+0x823F2578 = { name = "wwe2k14_vcall_823F2578", end = 0x823F2588 }
+0x823F2588 = { name = "wwe2k14_vcall_823F2588", end = 0x823F2598 }
+0x823F25D8 = { name = "wwe2k14_vcall_823F25D8", end = 0x823F25E8 }
+0x823F25E8 = { name = "wwe2k14_vcall_823F25E8", end = 0x823F25F8 }
+0x823F25F8 = { name = "wwe2k14_vcall_823F25F8", end = 0x823F2608 }
+0x823F2648 = { name = "wwe2k14_vcall_823F2648", end = 0x823F2658 }
+0x823F2658 = { name = "wwe2k14_vcall_823F2658", end = 0x823F2668 }
+0x823F2698 = { name = "wwe2k14_vcall_823F2698", end = 0x823F26A8 }
+0x823F26B8 = { name = "wwe2k14_vcall_823F26B8", end = 0x823F26C8 }
+0x823F26C8 = { name = "wwe2k14_vcall_823F26C8", end = 0x823F26D8 }
+0x823F26F8 = { name = "wwe2k14_vcall_823F26F8", end = 0x823F2708 }
+0x823F2718 = { name = "wwe2k14_vcall_823F2718", end = 0x823F2728 }
+0x823F2728 = { name = "wwe2k14_vcall_823F2728", end = 0x823F2738 }
+0x823F2768 = { name = "wwe2k14_vcall_823F2768", end = 0x823F2778 }
+0x823F2798 = { name = "wwe2k14_vcall_823F2798", end = 0x823F27A8 }
+0x823F27D8 = { name = "wwe2k14_vcall_823F27D8", end = 0x823F27E8 }
+0x823F2808 = { name = "wwe2k14_vcall_823F2808", end = 0x823F2818 }
+0x823F2848 = { name = "wwe2k14_vcall_823F2848", end = 0x823F2858 }
+0x823F2858 = { name = "wwe2k14_vcall_823F2858", end = 0x823F2868 }
+0x823F2868 = { name = "wwe2k14_vcall_823F2868", end = 0x823F2878 }
+0x823F2878 = { name = "wwe2k14_vcall_823F2878", end = 0x823F2888 }
+0x823F28A8 = { name = "wwe2k14_vcall_823F28A8", end = 0x823F28B8 }
+0x823F28B8 = { name = "wwe2k14_vcall_823F28B8", end = 0x823F28C8 }
+0x823F28C8 = { name = "wwe2k14_vcall_823F28C8", end = 0x823F28D8 }
+0x823F28D8 = { name = "wwe2k14_vcall_823F28D8", end = 0x823F28E8 }
+0x823F2918 = { name = "wwe2k14_vcall_823F2918", end = 0x823F2928 }
+0x823F2928 = { name = "wwe2k14_vcall_823F2928", end = 0x823F2938 }
+0x823F2938 = { name = "wwe2k14_vcall_823F2938", end = 0x823F2948 }
+0x823F2988 = { name = "wwe2k14_vcall_823F2988", end = 0x823F2998 }
+0x823F2998 = { name = "wwe2k14_vcall_823F2998", end = 0x823F29A8 }
+0x823F29A8 = { name = "wwe2k14_vcall_823F29A8", end = 0x823F29B8 }
+0x823F29D8 = { name = "wwe2k14_vcall_823F29D8", end = 0x823F29E8 }
+0x823F29F8 = { name = "wwe2k14_vcall_823F29F8", end = 0x823F2A08 }
+0x823F2A08 = { name = "wwe2k14_vcall_823F2A08", end = 0x823F2A18 }
+0x823F2A38 = { name = "wwe2k14_vcall_823F2A38", end = 0x823F2A48 }
+0x823F2A58 = { name = "wwe2k14_vcall_823F2A58", end = 0x823F2A68 }
+0x823F2A68 = { name = "wwe2k14_vcall_823F2A68", end = 0x823F2A78 }
+0x823F2AA8 = { name = "wwe2k14_vcall_823F2AA8", end = 0x823F2AB8 }
+0x823F2AB8 = { name = "wwe2k14_vcall_823F2AB8", end = 0x823F2AC8 }
+0x823F2AE8 = { name = "wwe2k14_vcall_823F2AE8", end = 0x823F2AF8 }
+0x823F2B18 = { name = "wwe2k14_vcall_823F2B18", end = 0x823F2B28 }
+0x823F2B48 = { name = "wwe2k14_vcall_823F2B48", end = 0x823F2B58 }
+0x823F2B88 = { name = "wwe2k14_vcall_823F2B88", end = 0x823F2B98 }
+0x823F2B98 = { name = "wwe2k14_vcall_823F2B98", end = 0x823F2BA8 }
+0x823F2BA8 = { name = "wwe2k14_vcall_823F2BA8", end = 0x823F2BB8 }
+0x823F2BB8 = { name = "wwe2k14_vcall_823F2BB8", end = 0x823F2BC8 }
+0x823F2BF8 = { name = "wwe2k14_vcall_823F2BF8", end = 0x823F2C08 }
+0x823F2C08 = { name = "wwe2k14_vcall_823F2C08", end = 0x823F2C18 }
+0x823F2C18 = { name = "wwe2k14_vcall_823F2C18", end = 0x823F2C28 }
+0x823F2C28 = { name = "wwe2k14_vcall_823F2C28", end = 0x823F2C38 }
+0x823F2C78 = { name = "wwe2k14_vcall_823F2C78", end = 0x823F2C88 }
+0x823F2C88 = { name = "wwe2k14_vcall_823F2C88", end = 0x823F2C98 }
+0x823F2CD8 = { name = "wwe2k14_vcall_823F2CD8", end = 0x823F2CE8 }
+0x823F2CE8 = { name = "wwe2k14_vcall_823F2CE8", end = 0x823F2CF8 }
+0x823F2CF8 = { name = "wwe2k14_vcall_823F2CF8", end = 0x823F2D08 }
+0x823F2D28 = { name = "wwe2k14_vcall_823F2D28", end = 0x823F2D38 }
+0x823F2D48 = { name = "wwe2k14_vcall_823F2D48", end = 0x823F2D58 }
+0x823F2D58 = { name = "wwe2k14_vcall_823F2D58", end = 0x823F2D68 }
+0x823F2D88 = { name = "wwe2k14_vcall_823F2D88", end = 0x823F2D98 }
+0x823F2DB8 = { name = "wwe2k14_vcall_823F2DB8", end = 0x823F2DC8 }
+0x823F2DF8 = { name = "wwe2k14_vcall_823F2DF8", end = 0x823F2E08 }
+0x823F2E08 = { name = "wwe2k14_vcall_823F2E08", end = 0x823F2E18 }
+0x823F2E68 = { name = "wwe2k14_vcall_823F2E68", end = 0x823F2E78 }
+0x823F2E88 = { name = "wwe2k14_vcall_823F2E88", end = 0x823F2E98 }
+0x823F2E98 = { name = "wwe2k14_vcall_823F2E98", end = 0x823F2EA8 }
+0x823F2ED8 = { name = "wwe2k14_vcall_823F2ED8", end = 0x823F2EE8 }
+0x823F2EE8 = { name = "wwe2k14_vcall_823F2EE8", end = 0x823F2EF8 }
+0x823F2EF8 = { name = "wwe2k14_vcall_823F2EF8", end = 0x823F2F08 }
+0x823F2F08 = { name = "wwe2k14_vcall_823F2F08", end = 0x823F2F18 }
+0x823F2F58 = { name = "wwe2k14_vcall_823F2F58", end = 0x823F2F68 }
+0x823F2F68 = { name = "wwe2k14_vcall_823F2F68", end = 0x823F2F78 }
+0x823F2F78 = { name = "wwe2k14_vcall_823F2F78", end = 0x823F2F88 }
+0x823F2FC8 = { name = "wwe2k14_vcall_823F2FC8", end = 0x823F2FD8 }
+0x823F2FD8 = { name = "wwe2k14_vcall_823F2FD8", end = 0x823F2FE8 }
+0x823F3018 = { name = "wwe2k14_vcall_823F3018", end = 0x823F3028 }
+0x823F3038 = { name = "wwe2k14_vcall_823F3038", end = 0x823F3048 }
+0x823F3048 = { name = "wwe2k14_vcall_823F3048", end = 0x823F3058 }
+0x823F3078 = { name = "wwe2k14_vcall_823F3078", end = 0x823F3088 }
+0x823F3098 = { name = "wwe2k14_vcall_823F3098", end = 0x823F30A8 }
+0x823F30A8 = { name = "wwe2k14_vcall_823F30A8", end = 0x823F30B8 }
+0x823F30D8 = { name = "wwe2k14_vcall_823F30D8", end = 0x823F30E8 }
+0x823F30F8 = { name = "wwe2k14_vcall_823F30F8", end = 0x823F3108 }
+0x823F3108 = { name = "wwe2k14_vcall_823F3108", end = 0x823F3118 }
+0x828551D4 = { name = "wwe2k14_vcall_828551D4", end = 0x828551E4 }
+0x828551F0 = { name = "wwe2k14_vcall_828551F0", end = 0x82855200 }
+0x828684E8 = { name = "wwe2k14_vcall_828684E8", end = 0x828684F8 }
+0x82868520 = { name = "wwe2k14_vcall_82868520", end = 0x82868530 }
+0x828A3FDC = { name = "wwe2k14_vcall_828A3FDC", end = 0x828A3FEC }
+0x828A5430 = { name = "wwe2k14_vcall_828A5430", end = 0x828A5440 }
+0x828A54CC = { name = "wwe2k14_vcall_828A54CC", end = 0x828A54DC }
+0x828B1174 = { name = "wwe2k14_vcall_828B1174", end = 0x828B1184 }
+0x828B3078 = { name = "wwe2k14_vcall_828B3078", end = 0x828B3088 }
+0x8291E76C = { name = "wwe2k14_vcall_8291E76C", end = 0x8291E77C }
+0x8291E77C = { name = "wwe2k14_vcall_8291E77C", end = 0x8291E78C }
+0x8291E78C = { name = "wwe2k14_vcall_8291E78C", end = 0x8291E79C }
+0x8291E7A8 = { name = "wwe2k14_vcall_8291E7A8", end = 0x8291E7B8 }
+0x8291E7B8 = { name = "wwe2k14_vcall_8291E7B8", end = 0x8291E7C8 }
+0x8291E7C8 = { name = "wwe2k14_vcall_8291E7C8", end = 0x8291E7D8 }
+0x8294D748 = { name = "wwe2k14_vcall_8294D748", end = 0x8294D758 }
+0x8294D758 = { name = "wwe2k14_vcall_8294D758", end = 0x8294D768 }
+0x8294D768 = { name = "wwe2k14_vcall_8294D768", end = 0x8294D778 }
+0x8294D778 = { name = "wwe2k14_vcall_8294D778", end = 0x8294D788 }
+0x8294D7D4 = { name = "wwe2k14_vcall_8294D7D4", end = 0x8294D7E4 }
+0x8294D7E4 = { name = "wwe2k14_vcall_8294D7E4", end = 0x8294D7F4 }
+0x8294D7F4 = { name = "wwe2k14_vcall_8294D7F4", end = 0x8294D804 }
+0x8294D804 = { name = "wwe2k14_vcall_8294D804", end = 0x8294D814 }
+0x8294D814 = { name = "wwe2k14_vcall_8294D814", end = 0x8294D824 }
+0x8294D824 = { name = "wwe2k14_vcall_8294D824", end = 0x8294D834 }
+0x8294D834 = { name = "wwe2k14_vcall_8294D834", end = 0x8294D844 }
+0x8294D844 = { name = "wwe2k14_vcall_8294D844", end = 0x8294D854 }
+0x829B73D8 = { name = "wwe2k14_vcall_829B73D8", end = 0x829B73E8 }
+0x829B73E8 = { name = "wwe2k14_vcall_829B73E8", end = 0x829B73F8 }
+0x829B73F8 = { name = "wwe2k14_vcall_829B73F8", end = 0x829B7408 }
+0x829B7408 = { name = "wwe2k14_vcall_829B7408", end = 0x829B7418 }
+0x829B7418 = { name = "wwe2k14_vcall_829B7418", end = 0x829B7428 }
+0x829B7428 = { name = "wwe2k14_vcall_829B7428", end = 0x829B7438 }
+0x829B7438 = { name = "wwe2k14_vcall_829B7438", end = 0x829B7448 }
+0x829B7448 = { name = "wwe2k14_vcall_829B7448", end = 0x829B7458 }
+0x829B7458 = { name = "wwe2k14_vcall_829B7458", end = 0x829B7468 }
+0x829B7468 = { name = "wwe2k14_vcall_829B7468", end = 0x829B7478 }
+0x829B7478 = { name = "wwe2k14_vcall_829B7478", end = 0x829B7488 }
+0x829B7488 = { name = "wwe2k14_vcall_829B7488", end = 0x829B7498 }
+0x829B7498 = { name = "wwe2k14_vcall_829B7498", end = 0x829B74A8 }
+0x829B74A8 = { name = "wwe2k14_vcall_829B74A8", end = 0x829B74B8 }
+0x829B74B8 = { name = "wwe2k14_vcall_829B74B8", end = 0x829B74C8 }
+0x829B74C8 = { name = "wwe2k14_vcall_829B74C8", end = 0x829B74D8 }
+0x829B74D8 = { name = "wwe2k14_vcall_829B74D8", end = 0x829B74E8 }
+0x82A1DCC4 = { name = "wwe2k14_vcall_82A1DCC4", end = 0x82A1DCD4 }
+0x82A1DCEC = { name = "wwe2k14_vcall_82A1DCEC", end = 0x82A1DCFC }
+0x82AFE808 = { name = "wwe2k14_vcall_82AFE808", end = 0x82AFE818 }
+0x82B08210 = { name = "wwe2k14_vcall_82B08210", end = 0x82B08220 }
+0x82B08618 = { name = "wwe2k14_vcall_82B08618", end = 0x82B08628 }
+0x82B08638 = { name = "wwe2k14_vcall_82B08638", end = 0x82B08648 }
+0x82B08688 = { name = "wwe2k14_vcall_82B08688", end = 0x82B08698 }
+0x82B086A8 = { name = "wwe2k14_vcall_82B086A8", end = 0x82B086B8 }
+0x82B086C8 = { name = "wwe2k14_vcall_82B086C8", end = 0x82B086D8 }
+0x82BCD0EC = { name = "wwe2k14_vcall_82BCD0EC", end = 0x82BCD0FC }
+0x833443FC = { name = "wwe2k14_vcall_833443FC", end = 0x8334440C }
+0x83345808 = { name = "wwe2k14_vcall_83345808", end = 0x83345818 }
+
+# Removed 2026-10-14 (legal-screen freeze root cause): 12 "vcall" pattern entries at 0x823BFBF8-0x823BFC38 and
+# 0x82BCD07C-0x82BCD0DC were really the case blocks of switch dispatchers (bdzf chains in sub_823BFBC0 and
+# sub_82BCD038). Splitting them made codegen turn each `bdzf` into a bare `return` ("branch ... outside function"),
+# so the scene state machine (sub_823BFBC0: state 1..4 handlers) never ran and the legal screen never advanced.
+
+# ---- Second audit pass (2026-10-15): pointer targets right after a return that still were not functions ----
+0x83122278 = { name = "wwe2k14_ptr2_83122278", end = 0x83122290 }  # member-dispatch thunk (lbz/rotlwi/add/lwz/mtctr/bctr); address built at 0x831236FC. Crash 2026-10-15: indirect call from 0x83123060 during an entrance
+0x832012C8 = { name = "wwe2k14_ptr2_832012C8", end = 0x832012F0 }  # bctr dispatch thunk; address built in code at 0x83203EB4
+0x83201320 = { name = "wwe2k14_ptr2_83201320", end = 0x83201338 }  # bctr dispatch thunk; address built in code
+0x83201338 = { name = "wwe2k14_ptr2_83201338", end = 0x83201350 }  # bctr dispatch thunk; address built in code
+0x83201350 = { name = "wwe2k14_ptr2_83201350", end = 0x83201368 }  # bctr dispatch thunk; address built in code
+0x82C87D4C = { name = "wwe2k14_ptr2_82C87D4C", end = 0x82C87D80 }  # ends blr; stored in data
+0x82D3B860 = { name = "wwe2k14_ptr2_82D3B860", end = 0x82D3B880 }  # ends blr; stored in data (2 refs)
+
+# ---- Orphan pass (2026-10-15): straight-line blocks after a return that no branch or label reaches ----
+# (only reachable through computed calls, e.g. the per-command dispatch thunks at 0x832012C8+ whose table is
+#  filled at runtime; crash 2026-10-15: indirect call to 0x832012F0 from 0x83201910 at the start of a match)
+0x830F80C8 = { name = "wwe2k14_orphan_830F80C8", end = 0x830F80FC }
+0x8311A670 = { name = "wwe2k14_orphan_8311A670", end = 0x8311A67C }
+0x8313B098 = { name = "wwe2k14_orphan_8313B098", end = 0x8313B0BC }
+0x832012F0 = { name = "wwe2k14_orphan_832012F0", end = 0x83201308 }
+0x83201308 = { name = "wwe2k14_orphan_83201308", end = 0x83201320 }
+0x832842E0 = { name = "wwe2k14_orphan_832842E0", end = 0x8328431C }
+0x8329EA38 = { name = "wwe2k14_orphan_8329EA38", end = 0x8329EA5C }
+0x83456E38 = { name = "wwe2k14_orphan_83456E38", end = 0x83456E40 }

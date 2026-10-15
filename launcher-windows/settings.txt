@@ -1,0 +1,17 @@
+# WWE 2K14 Recomp settings. Change a value, save this file, then start play-wwe2k14.bat.
+
+# game_folder: your own extracted WWE 2K14 (Xbox 360) game folder, the one containing default.xex.
+# Leave empty to use the "game" folder next to play-wwe2k14.bat.
+game_folder=
+
+# resolution: 720p (native), 1440p, 4k (true 4K, heavier), or 4k-fsr
+#   4k-fsr = renders at 1440p and upscales to your screen with AMD FSR: looks close to 4K, runs like 1440p
+resolution=1440p
+
+# fps:
+#   original = the game's own timing: 60 in menus and gameplay, 30 in entrances and cutscenes (natural speed)
+#   60       = force 60 everywhere (entrances and cutscenes play too fast)
+fps=original
+
+# fullscreen: yes or no (F11 also toggles it in game)
+fullscreen=yes

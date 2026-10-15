@@ -1,0 +1,124 @@
+From 9a12d98b44e31d42a6fedc597cadb491616030b5 Mon Sep 17 00:00:00 2001
+From: mikeflare007 <mikeflare007@users.noreply.github.com>
+Date: Wed, 14 Oct 2026 18:35:01 -0400
+Subject: [PATCH] kernel/string: tolerate non-UTF-8 object names; log them
+
+---
+ include/rex/string/utf8.h                  |  3 ++
+ src/core/utf8.cpp                          | 38 ++++++++++++++++++++++
+ src/kernel/xboxkrnl/xboxkrnl_threading.cpp |  7 ++++
+ 3 files changed, 48 insertions(+)
+
+diff --git a/include/rex/string/utf8.h b/include/rex/string/utf8.h
+index d419be1..7796f64 100644
+--- a/include/rex/string/utf8.h
++++ b/include/rex/string/utf8.h
+@@ -34,6 +34,9 @@ std::string utf8_upper_ascii(const std::string_view view);
+ size_t utf8_hash_fnv1a(const std::string_view view);
+ size_t utf8_hash_fnv1a_case(const std::string_view view);
+ 
++// True when view is well-formed UTF-8.
++bool utf8_is_valid(const std::string_view view);
++
+ // Splits the given haystack on any delimiters (needles) and returns all parts.
+ std::vector<std::string_view> utf8_split(const std::string_view haystack,
+                                          const std::string_view needles, bool remove_empty = false);
+diff --git a/src/core/utf8.cpp b/src/core/utf8.cpp
+index a97702e..03232f5 100644
+--- a/src/core/utf8.cpp
++++ b/src/core/utf8.cpp
+@@ -63,7 +63,28 @@ size_t utf8_count(const std::string_view view) {
+   return size_t(utfcpp::distance(view.cbegin(), view.cend()));
+ }
+ 
++bool utf8_is_valid(const std::string_view view) {
++  return utfcpp::is_valid(view.begin(), view.end());
++}
++
++namespace {
++// Xbox 360 object names are ANSI strings, not guaranteed UTF-8. When a string is not valid
++// UTF-8, case-folding helpers fall back to per-byte ASCII folding instead of letting utfcpp
++// throw (WWE 2K14 boot: uncaught utf8::invalid_utf8 from NtCreateEvent -> GetObjectByName).
++inline uint8_t fold_byte(uint8_t c, bool lower) {
++  if (lower && c >= 'A' && c <= 'Z') return uint8_t(c + 32);
++  if (!lower && c >= 'a' && c <= 'z') return uint8_t(c - 32);
++  return c;
++}
++std::string fold_bytes(const std::string_view view, bool lower) {
++  std::string result(view);
++  for (auto& ch : result) ch = char(fold_byte(uint8_t(ch), lower));
++  return result;
++}
++}  // namespace
++
+ std::string utf8_lower_ascii(const std::string_view view) {
++  if (!utf8_is_valid(view)) return fold_bytes(view, true);
+   auto [begin, end] = make_citer(view);
+   std::string result;
+   for (auto it = begin; it != end; ++it) {
+@@ -73,6 +94,7 @@ std::string utf8_lower_ascii(const std::string_view view) {
+ }
+ 
+ std::string utf8_upper_ascii(const std::string_view view) {
++  if (!utf8_is_valid(view)) return fold_bytes(view, false);
+   auto [begin, end] = make_citer(view);
+   std::string result;
+   for (auto it = begin; it != end; ++it) {
+@@ -91,6 +113,16 @@ inline size_t hash_fnv1a(const std::string_view view) {
+     return hash;
+   };
+   auto hash = offset_basis;
++  if (!utfcpp::is_valid(view.begin(), view.end())) {
++    for (const char ch : view) {
++      const uint32_t c = LOWER ? fold_byte(uint8_t(ch), true) : uint8_t(ch);
++      hash = work(hash, uint8_t(c & 0xFF));
++      hash = work(hash, 0);
++      hash = work(hash, 0);
++      hash = work(hash, 0);
++    }
++    return hash;
++  }
+   auto [begin, end] = make_citer(view);
+   for (auto it = begin; it != end; ++it) {
+     uint32_t c;
+@@ -202,6 +234,12 @@ bool utf8_equal_case(const std::string_view left, const std::string_view right)
+   } else if (!right.size()) {
+     return false;
+   }
++  if (!utf8_is_valid(left) || !utf8_is_valid(right)) {
++    return left.size() == right.size() &&
++           std::equal(left.begin(), left.end(), right.begin(), [](char a, char b) {
++             return fold_byte(uint8_t(a), true) == fold_byte(uint8_t(b), true);
++           });
++  }
+   auto [left_begin, left_end] = make_citer(left);
+   auto [right_begin, right_end] = make_citer(right);
+   return std::equal(left_begin, left_end, right_begin, right_end, equal_ascii_case);
+diff --git a/src/kernel/xboxkrnl/xboxkrnl_threading.cpp b/src/kernel/xboxkrnl/xboxkrnl_threading.cpp
+index f72fd03..f674709 100644
+--- a/src/kernel/xboxkrnl/xboxkrnl_threading.cpp
++++ b/src/kernel/xboxkrnl/xboxkrnl_threading.cpp
+@@ -33,6 +33,7 @@
+ #include <rex/system/user_module.h>
+ #include <rex/system/util/string_utils.h>
+ #include <rex/system/xevent.h>
++#include <rex/string/utf8.h>
+ #include <rex/system/xmutant.h>
+ #include <rex/system/xsemaphore.h>
+ #include <rex/system/xthread.h>
+@@ -115,6 +116,12 @@ object_ref<T> LookupNamedObject(KernelState* kernel_state, uint32_t obj_attribut
+       kernel_state->memory()->TranslateVirtual<X_OBJECT_ATTRIBUTES*>(obj_attributes_ptr);
+   assert_true(obj_attributes->name_ptr != 0);
+   auto name = util::TranslateAnsiStringAddress(kernel_state->memory(), obj_attributes->name_ptr);
++  if (!name.empty() && !rex::string::utf8_is_valid(name)) {
++    std::string hex;
++    for (size_t i = 0; i < name.size() && i < 64; ++i) hex += fmt::format("{:02X}", uint8_t(name[i]));
++    REXLOG_WARN("[named-object] name is not UTF-8: attrs=0x{:08X} name_ptr=0x{:08X} len={} bytes={}",
++                obj_attributes_ptr, (uint32_t)obj_attributes->name_ptr, name.size(), hex);
++  }
+   if (!name.empty()) {
+     X_HANDLE handle = X_INVALID_HANDLE_VALUE;
+     X_RESULT result = kernel_state->object_table()->GetObjectByName(name, &handle);
+-- 
+2.43.0
+

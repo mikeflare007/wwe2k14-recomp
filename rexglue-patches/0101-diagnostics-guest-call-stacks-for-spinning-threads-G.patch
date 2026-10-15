@@ -1,0 +1,381 @@
+From b8739be6c07ad39219b187cfc52b84a4c8b7b90d Mon Sep 17 00:00:00 2001
+From: mikeflare007 <mikeflare007@users.noreply.github.com>
+Date: Wed, 14 Oct 2026 20:37:13 -0400
+Subject: [PATCH] diagnostics: guest call stacks for spinning threads, GPU
+ ring/stall logging; audio: silent clock watchdog when the host output stops
+ pulling
+
+---
+ include/rex/audio/sdl/sdl_audio_driver.h | 12 ++++++
+ include/rex/diagnostics/freeze_logger.h  |  7 +++
+ src/audio/sdl/sdl_audio_driver.cpp       | 55 ++++++++++++++++++++++++
+ src/core/freeze_logger.cpp               | 28 ++++++++++++
+ src/graphics/command_processor.cpp       | 34 +++++++++++++++
+ src/system/xthread.cpp                   | 47 ++++++++++++++++++++
+ 6 files changed, 183 insertions(+)
+
+diff --git a/include/rex/audio/sdl/sdl_audio_driver.h b/include/rex/audio/sdl/sdl_audio_driver.h
+index 9239d78..67c1aa5 100644
+--- a/include/rex/audio/sdl/sdl_audio_driver.h
++++ b/include/rex/audio/sdl/sdl_audio_driver.h
+@@ -11,7 +11,9 @@
+ 
+ #pragma once
+ 
++#include <atomic>
+ #include <mutex>
++#include <thread>
+ #include <queue>
+ #include <stack>
+ 
+@@ -57,6 +59,16 @@ class SDLAudioDriver : public AudioDriver {
+   std::queue<float*> frames_queued_ = {};
+   std::stack<float*> frames_unused_ = {};
+   std::mutex frames_mutex_ = {};
++
++  // Keeps the guest audio clock running when the host device stops pulling (asleep, in exclusive use,
++  // unplugged, broken driver): after kStallMs without an SDL callback, queued guest frames are consumed
++  // silently at real-time pace. Titles block on the audio thread otherwise (WWE 2K14: Wwise never loaded
++  // its banks and the game sat on the legal screen).
++  void StallWatchdog();
++  std::thread stall_watchdog_;
++  std::atomic<bool> stall_watchdog_run_{false};
++  std::atomic<int64_t> last_callback_ns_{0};
++  std::atomic<bool> stall_reported_{false};
+ };
+ 
+ }  // namespace rex::audio::sdl
+diff --git a/include/rex/diagnostics/freeze_logger.h b/include/rex/diagnostics/freeze_logger.h
+index fc2c8d8..33bec23 100644
+--- a/include/rex/diagnostics/freeze_logger.h
++++ b/include/rex/diagnostics/freeze_logger.h
+@@ -76,6 +76,13 @@ uint64_t RecordedEventCount();
+ using GuestStateDumpFn = void (*)(FILE* file, uint64_t now_ns);
+ void SetGuestStateDumpFn(GuestStateDumpFn fn);
+ 
++// Guest call-stack sampling for spinning threads: each guest thread registers its PPCContext, and the
++// system layer provides a walker (guest memory lives there). Up to kMaxGuestFrames return addresses,
++// newest first (the context's lr, then saved LRs from the back-chain).
++using GuestBacktraceFn = int (*)(const void* ppc_context, uint32_t* out, int max_frames);
++void SetGuestBacktraceFn(GuestBacktraceFn fn);
++void SetThreadGuestContext(const void* ppc_context);
++
+ // The access-violation recovery paths call this once per recovered page. Cheap
+ // relaxed atomics + one timestamp; safe from any thread. The report prints the
+ // per-kind count plus the last guest address / protect / age.
+diff --git a/src/audio/sdl/sdl_audio_driver.cpp b/src/audio/sdl/sdl_audio_driver.cpp
+index 562f7ce..606a3b4 100644
+--- a/src/audio/sdl/sdl_audio_driver.cpp
++++ b/src/audio/sdl/sdl_audio_driver.cpp
+@@ -94,8 +94,16 @@ bool SDLAudioDriver::Initialize() {
+ 
+   // A sound server that is briefly unavailable (e.g. being reconfigured by a streaming host as the title starts)
+   // gets a few short retries before falling back to silent output.
++  auto start_watchdog = [this]() {
++    last_callback_ns_.store(
++        std::chrono::duration_cast<std::chrono::nanoseconds>(
++            std::chrono::steady_clock::now().time_since_epoch()).count());
++    stall_watchdog_run_.store(true);
++    stall_watchdog_ = std::thread([this]() { StallWatchdog(); });
++  };
+   for (int attempt = 0; attempt < 4; ++attempt) {
+     if (OpenOutput()) {
++      start_watchdog();
+       return true;
+     }
+     CloseOutput();
+@@ -115,12 +123,54 @@ bool SDLAudioDriver::Initialize() {
+   SDL_SetHintWithPriority(SDL_HINT_AUDIO_DISK_OUTPUT_FILE, "/dev/null", SDL_HINT_OVERRIDE);
+ #endif
+   if (OpenOutput()) {
++    start_watchdog();
+     return true;
+   }
+   CloseOutput();
+   return false;
+ }
+ 
++void SDLAudioDriver::StallWatchdog() {
++  using clock = std::chrono::steady_clock;
++  constexpr int64_t kStallMs = 250;
++  // One guest frame is channel_samples_ (256) samples at frame_frequency_ (48 kHz) = 5.33 ms.
++  const auto frame_period = std::chrono::nanoseconds(
++      int64_t(1'000'000'000) * int64_t(channel_samples_) / int64_t(frame_frequency_));
++  auto next = clock::now();
++  while (stall_watchdog_run_.load()) {
++    const int64_t now_ns =
++        std::chrono::duration_cast<std::chrono::nanoseconds>(clock::now().time_since_epoch()).count();
++    const bool stalled = now_ns - last_callback_ns_.load() > kStallMs * 1'000'000;
++    if (!stalled) {
++      if (stall_reported_.exchange(false)) {
++        REXAPU_INFO("Audio output is pulling again; watchdog stood down");
++      }
++      next = clock::now();
++      std::this_thread::sleep_for(std::chrono::milliseconds(20));
++      continue;
++    }
++    if (!stall_reported_.exchange(true)) {
++      REXAPU_WARN("Audio output stopped requesting samples for {} ms; consuming guest frames silently",
++                  kStallMs);
++    }
++    bool consumed = false;
++    {
++      std::unique_lock<std::mutex> guard(frames_mutex_);
++      if (!frames_queued_.empty()) {
++        frames_unused_.push(frames_queued_.front());
++        frames_queued_.pop();
++        consumed = true;
++      }
++    }
++    if (consumed) {
++      semaphore_->Release(1, nullptr);
++    }
++    next += frame_period;
++    std::this_thread::sleep_until(next);
++    if (clock::now() - next > std::chrono::milliseconds(50)) next = clock::now();
++  }
++}
++
+ void SDLAudioDriver::CloseOutput() {
+   if (sdl_stream_) {
+     SDL_DestroyAudioStream(sdl_stream_);
+@@ -229,6 +279,8 @@ void SDLAudioDriver::SubmitFrame(uint32_t frame_ptr) {
+ }
+ 
+ void SDLAudioDriver::Shutdown() {
++  stall_watchdog_run_.store(false);
++  if (stall_watchdog_.joinable()) stall_watchdog_.join();
+   if (sdl_stream_) {
+     SDL_DestroyAudioStream(sdl_stream_);
+     sdl_stream_ = nullptr;
+@@ -273,6 +325,9 @@ void SDLAudioDriver::SDLCallback(void* userdata, SDL_AudioStream* stream, int ad
+   static double probe_output_squares = 0.0;
+   static float probe_output_peak = 0.0f;
+   const auto driver = static_cast<SDLAudioDriver*>(userdata);
++  driver->last_callback_ns_.store(std::chrono::duration_cast<std::chrono::nanoseconds>(
++                                      std::chrono::steady_clock::now().time_since_epoch())
++                                      .count());
+   const int sample_count =
+       static_cast<int>(channel_samples_ * std::max<uint8_t>(driver->sdl_device_channels_, 1));
+   const int len = static_cast<int>(sizeof(float) * sample_count);
+diff --git a/src/core/freeze_logger.cpp b/src/core/freeze_logger.cpp
+index 7f8c74c..4bb5b0f 100644
+--- a/src/core/freeze_logger.cpp
++++ b/src/core/freeze_logger.cpp
+@@ -124,12 +124,17 @@ struct ThreadSlot {
+   // Leaf host PCs gathered by repeated capture signals at report time.
+   std::atomic<uint32_t> spin_count{0};
+   std::atomic<uint64_t> spin_pc[kMaxSpinSamples] = {};
++  // Guest view of the same samples (see SetGuestBacktraceFn).
++  std::atomic<const void*> guest_ctx{nullptr};
++  static constexpr int kMaxGuestFrames = 16;
++  std::atomic<uint32_t> spin_guest[kMaxSpinSamples][kMaxGuestFrames] = {};
+ };
+ 
+ ThreadSlot g_slots[kMaxThreads];
+ std::atomic<uint64_t> g_used_mask{0};
+ std::atomic<bool> g_spin_sampling{false};
+ GuestStateDumpFn g_guest_state_dump = nullptr;
++GuestBacktraceFn g_guest_backtrace = nullptr;
+ #if !defined(_WIN32)
+ thread_local ThreadSlot* t_slot = nullptr;
+ int g_capture_signal = 0;
+@@ -436,6 +441,14 @@ void RequestCapture(ThreadSlot* slot) {
+         const uint32_t sample = slot->spin_count.fetch_add(1, std::memory_order_relaxed);
+         if (sample < kMaxSpinSamples) {
+           slot->spin_pc[sample].store(context.Rip, std::memory_order_relaxed);
++          const void* gctx = slot->guest_ctx.load(std::memory_order_relaxed);
++          if (gctx && g_guest_backtrace) {
++            uint32_t frames[ThreadSlot::kMaxGuestFrames] = {};
++            const int n = g_guest_backtrace(gctx, frames, ThreadSlot::kMaxGuestFrames);
++            for (int f = 0; f < n && f < ThreadSlot::kMaxGuestFrames; ++f) {
++              slot->spin_guest[sample][f].store(frames[f], std::memory_order_relaxed);
++            }
++          }
+         }
+       }
+       slot->cap_pc[0].store(context.Rip, std::memory_order_relaxed);
+@@ -492,6 +505,7 @@ void SampleSpinPcs(const int* indices, int count) {
+     slot.spin_count.store(0, std::memory_order_release);
+     for (uint32_t i = 0; i < kMaxSpinSamples; ++i) {
+       slot.spin_pc[i].store(0, std::memory_order_relaxed);
++      for (int f = 0; f < ThreadSlot::kMaxGuestFrames; ++f) slot.spin_guest[i][f].store(0, std::memory_order_relaxed);
+     }
+   }
+   g_spin_sampling.store(true, std::memory_order_release);
+@@ -690,6 +704,15 @@ void GenerateReport(uint64_t now_ns, uint64_t last_present_ns, bool at_close) {
+         const char* sym = SymbolizeHostPc(pc);
+         std::fprintf(file, "    spin_pc[%u]=0x%llx sym=%s\n", s, (unsigned long long)pc,
+                      sym ? sym : "?");
++        if (slot.spin_guest[s][0].load(std::memory_order_relaxed)) {
++          std::fprintf(file, "      guest_stack:");
++          for (int f = 0; f < ThreadSlot::kMaxGuestFrames; ++f) {
++            const uint32_t g = slot.spin_guest[s][f].load(std::memory_order_relaxed);
++            if (!g && f > 0 && !slot.spin_guest[s][f + 1 < ThreadSlot::kMaxGuestFrames ? f + 1 : f].load(std::memory_order_relaxed)) break;
++            std::fprintf(file, " 0x%08X", g);
++          }
++          std::fprintf(file, "\n");
++        }
+       }
+     }
+     const uint32_t depth = std::min<uint32_t>(slot.cap_depth.load(std::memory_order_acquire),
+@@ -876,6 +899,10 @@ uint64_t RecordedEventCount() { return g_event_count.load(std::memory_order_rela
+ bool IsEnabled() { return g_enabled.load(std::memory_order_relaxed); }
+ 
+ void SetGuestStateDumpFn(GuestStateDumpFn fn) { g_guest_state_dump = fn; }
++void SetGuestBacktraceFn(GuestBacktraceFn fn) { g_guest_backtrace = fn; }
++void SetThreadGuestContext(const void* ppc_context) {
++  if (ThreadSlot* slot = t_slot) slot->guest_ctx.store(ppc_context, std::memory_order_release);
++}
+ 
+ void RecordMemoryRecovery(MemoryRecoveryKind kind, uint32_t guest_address, uint32_t protect) {
+   const int index = static_cast<int>(kind);
+@@ -1063,6 +1090,7 @@ void RegisterThread(uint32_t guest_thread_id, const char* name) {
+   slot.cap_depth.store(0, std::memory_order_relaxed);
+   std::memset(slot.name, 0, sizeof(slot.name));
+   if (name && *name) std::strncpy(slot.name, name, sizeof(slot.name) - 1);
++  slot.guest_ctx.store(nullptr, std::memory_order_relaxed);
+   slot.active.store(true, std::memory_order_release);
+   t_slot = &slot;
+   RecordSyncEvent(SyncType::kThreadCreate, 0, 0, name);
+diff --git a/src/graphics/command_processor.cpp b/src/graphics/command_processor.cpp
+index e11b747..f988968 100644
+--- a/src/graphics/command_processor.cpp
++++ b/src/graphics/command_processor.cpp
+@@ -388,6 +388,22 @@ void CommandProcessor::WorkerThreadMain() {
+       memory::store_and_swap<uint32_t>(memory_->TranslatePhysical(read_ptr_writeback_ptr_),
+                                        read_ptr_index_);
+     }
++    {
++      // Diagnostic: ring progress every 5 s (read/write positions and the written-back value).
++      static auto next_ring_report = std::chrono::steady_clock::now() + std::chrono::seconds(5);
++      static uint64_t batches = 0;
++      ++batches;
++      const auto now = std::chrono::steady_clock::now();
++      if (now >= next_ring_report) {
++        next_ring_report = now + std::chrono::seconds(5);
++        const uint32_t wb = read_ptr_writeback_ptr_
++                                ? memory::load_and_swap<uint32_t>(
++                                      memory_->TranslatePhysical(read_ptr_writeback_ptr_))
++                                : 0;
++        REXLOG_INFO("[gpu-ring] batches={} read=0x{:X} write=0x{:X} writeback=0x{:X}", batches,
++                    read_ptr_index_, write_ptr_index_.load(), wb);
++      }
++    }
+     diagnostics::rate_census::RecordGpuBusyEnd();
+ 
+     // FIXME: We're supposed to process the WAIT_UNTIL register at this point,
+@@ -454,6 +470,8 @@ bool CommandProcessor::SetupContext() {
+ void CommandProcessor::ShutdownContext() {}
+ 
+ void CommandProcessor::InitializeRingBuffer(uint32_t ptr, uint32_t size_log2) {
++  REXLOG_INFO("[gpu-ring] primary ring at physical 0x{:08X}, {} bytes", ptr,
++              uint32_t(1) << (size_log2 + 3));
+   read_ptr_index_ = 0;
+   primary_buffer_ptr_ = ptr;
+   primary_buffer_size_ = uint32_t(1) << (size_log2 + 3);
+@@ -463,6 +481,8 @@ void CommandProcessor::EnableReadPointerWriteBack(uint32_t ptr, uint32_t block_s
+   // CP_RB_RPTR_ADDR Ring Buffer Read Pointer Address 0x70C
+   // ptr = RB_RPTR_ADDR, pointer to write back the address to.
+   read_ptr_writeback_ptr_ = ptr;
++  REXLOG_INFO("[gpu-ring] read pointer write-back at physical 0x{:08X} (block_size_log2={})", ptr,
++              block_size_log2);
+   // CP_RB_CNTL Ring Buffer Control 0x704
+   // block_size = RB_BLKSZ, log2 of number of quadwords read between updates of
+   //              the read pointer.
+@@ -1240,6 +1260,10 @@ bool CommandProcessor::ExecutePacketType3_WAIT_REG_MEM(memory::RingBuffer* reade
+   };
+ 
+   bool matched = false;
++  // Diagnostic: report a wait that stays unsatisfied for a long time (GPU stalled on a value
++  // nobody writes). Logged once per wait, then again every 10 s.
++  const auto stall_start = std::chrono::steady_clock::now();
++  auto stall_next_report = std::chrono::seconds(2);
+   do {
+     uint32_t value = 0;
+     if (is_memory) {
+@@ -1281,6 +1305,16 @@ bool CommandProcessor::ExecutePacketType3_WAIT_REG_MEM(memory::RingBuffer* reade
+         break;
+     }
+     if (!matched) {
++      const auto stalled = std::chrono::steady_clock::now() - stall_start;
++      if (stalled >= stall_next_report) {
++        REXLOG_WARN(
++            "[gpu-stall] WAIT_REG_MEM unsatisfied for {} ms: {}=0x{:08X} value=0x{:08X} mask=0x{:08X} "
++            "ref=0x{:08X} func={} wait=0x{:X} ring_read=0x{:X}",
++            std::chrono::duration_cast<std::chrono::milliseconds>(stalled).count(),
++            is_memory ? "mem" : "reg", poll_reg_addr, value, mask, ref, wait_info & 0x7, wait,
++            read_ptr_index_);
++        stall_next_report += std::chrono::seconds(10);
++      }
+       if (census_enabled) {
+         if (census_wait_iterations == 0) {
+           const uint64_t now = diagnostics::rate_census::NowNs();
+diff --git a/src/system/xthread.cpp b/src/system/xthread.cpp
+index 1f82ba3..4a0e697 100644
+--- a/src/system/xthread.cpp
++++ b/src/system/xthread.cpp
+@@ -24,6 +24,8 @@
+ #include <rex/logging.h>
+ #include <rex/math.h>
+ #include <rex/ppc/context.h>
++#include <rex/memory/utils.h>
++#include <mutex>
+ #include <rex/ppc/exceptions.h>
+ #include <rex/runtime.h>
+ #include <rex/stream.h>
+@@ -460,6 +462,51 @@ X_STATUS XThread::Create() {
+ 
+     rex::diagnostics::freeze_logger::RegisterThread(
+         thread_id_, thread_name_.empty() ? "XThread" : thread_name_.c_str());
++    rex::diagnostics::freeze_logger::SetThreadGuestContext(thread_state_->context());
++    static std::once_flag backtrace_once;
++    std::call_once(backtrace_once, [this]() {
++      static memory::Memory* mem = kernel_state_->memory();
++      rex::diagnostics::freeze_logger::SetGuestBacktraceFn(
++          [](const void* p, uint32_t* out, int max) -> int {
++            auto* ctx = static_cast<const PPCContext*>(p);
++            int n = 0;
++            if (n < max) out[n++] = static_cast<uint32_t>(ctx->lr);
++            // Back-chain walk: [sp] = caller's sp, caller's saved LR at [caller_sp - 8]
++            // (prologue: mflr r12; stw r12,-8(r1); stwu r1,-N(r1)). Only within guest stacks.
++            uint32_t sp = ctx->r1.u32;
++            for (int i = 0; i < 32 && n < max; ++i) {
++              if (sp < 0x70000000u || sp >= 0x7F000000u) break;
++              const uint32_t back = rex::memory::load_and_swap<uint32_t>(mem->TranslateVirtual(sp));
++              if (back <= sp || back - sp > 0x100000u || back >= 0x7F000000u) break;
++              const uint32_t lr = rex::memory::load_and_swap<uint32_t>(mem->TranslateVirtual(back - 8));
++              if (lr) out[n++] = lr;
++              sp = back;
++            }
++            // WWE 2K14 diagnostic: D3D fence wait. Append marker 0xD3D00000, r29, r30, r31, then for the
++            // device (r29 in sub_82CB5840): *(dev+0x2B10) progress ptr, value at it, *(dev+0x2B1C) write
++            // position, *(dev+0x3BF0) target, *(dev+0x3520). Unmapped reads give 0xEEEEEEEE.
++            auto safe_rd = [](uint32_t a) -> uint32_t {
++              uint32_t protect = 0;
++              auto* heap = mem->LookupHeap(a);
++              if (!heap || !heap->QueryProtect(a, &protect) || !protect) return 0xEEEEEEEEu;
++              return rex::memory::load_and_swap<uint32_t>(mem->TranslateVirtual(a));
++            };
++            if (n + 9 <= max) {
++              const uint32_t dev = ctx->r29.u32;
++              out[n++] = 0xD3D00000u;
++              out[n++] = dev;
++              out[n++] = ctx->r30.u32;
++              out[n++] = ctx->r31.u32;
++              const uint32_t prog = safe_rd(dev + 0x2B10);
++              out[n++] = prog;
++              out[n++] = prog == 0xEEEEEEEEu ? 0xEEEEEEEEu : safe_rd(prog);
++              out[n++] = safe_rd(dev + 0x2B1C);
++              out[n++] = safe_rd(dev + 0x3BF0);
++              out[n++] = safe_rd(dev + 0x3520);
++            }
++            return n;
++          });
++    });
+ 
+     PROFILE_THREAD_ENTER(thread_name_.c_str());
+     PROFILE_THREAD_CREATED();
+-- 
+2.43.0
+

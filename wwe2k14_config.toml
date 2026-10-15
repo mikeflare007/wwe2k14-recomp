@@ -1,0 +1,11 @@
+project_name = "wwe2k14"
+file_path = "game/default.xex"
+out_directory_path = "generated"
+
+# CRT setjmp / longjmp (jmp_buf in r3). Same CRT code as WWE '13 (0x320 apart there too);
+# setjmp starts with the 5-instruction hook check (lis/lwz/cmpwi/mtctr/bnectr) that '13
+# found truncated when recompiled as plain code. Found by the f14-f31/r13-r31 save/restore pattern.
+setjmp_address = 0x8343C4D0
+longjmp_address = 0x8343C1B0
+
+includes = ["config/functions.toml", "config/hooks.toml"]

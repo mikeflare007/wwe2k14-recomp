@@ -1,0 +1,35 @@
+# Your own game files and everything derived from them - never commit these.
+game/
+generated/
+*.xex
+*.xexp
+*.iso
+# Build output
+out/
+build/
+# Local settings / caches
+wwe13.toml
+*.log
+*.arc
+*.pac
+*.pck
+*.bik
+*.bik2
+*.xtr
+compile_commands.json
+CMakeUserPresets.json
+
+# WWE 2K14 Recomp: never commit anything from your own copy, your saves, or built binaries
+update/
+userdata/
+save-backup/
+results/
+*.exe
+*.dll
+*.pdb
+*.map
+*.Dat
+*.dat
+*.header
+tu-image.bin
+tu000*
